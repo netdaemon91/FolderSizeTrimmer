@@ -1,9 +1,10 @@
 # Folder Size Trimmer
 
-[![Version](https://img.shields.io/badge/version-0.1-blue)](https://github.com/netdaemon91/FolderSizeTrimmer)
+[![Version](https://img.shields.io/badge/version-0.2-blue)](https://github.com/netdaemon91/FolderSizeTrimmer)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)](https://github.com/netdaemon91/FolderSizeTrimmer)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 ![GUI](https://img.shields.io/badge/GUI-Windows%20Forms-informational)
+![Languages](https://img.shields.io/badge/languages-English%20%7C%20Deutsch-success)
 [![Last commit](https://img.shields.io/github/last-commit/netdaemon91/FolderSizeTrimmer)](https://github.com/netdaemon91/FolderSizeTrimmer/commits/main)
 [![Stars](https://img.shields.io/github/stars/netdaemon91/FolderSizeTrimmer)](https://github.com/netdaemon91/FolderSizeTrimmer/stargazers)
 
@@ -26,6 +27,8 @@ Folder Size Trimmer scans a selected directory and all of its regular subdirecto
 - **Stop on first deletion error** instead of silently choosing additional files.
 - **Post-deletion rescan** to verify the actual remaining size.
 - **Deletion log** saved to the Windows temporary directory.
+- **Live language switcher:** German and English for buttons, table headers, status text, confirmations, error messages and the About dialog.
+- **Remembered language preference** in the user profile.
 - Small **About** dialog with version and author details.
 
 ## Requirements
@@ -34,7 +37,7 @@ Folder Size Trimmer scans a selected directory and all of its regular subdirecto
 - Windows PowerShell 5.1
 - .NET Windows Forms (included with supported Windows installations)
 
-No external PowerShell modules or installation process are required. This is a **PowerShell GUI**, not a compiled `.exe`.
+No external PowerShell modules or installation process are required. This is a **PowerShell GUI**, not a compiled `.exe`. Keep **`FolderSizeTrimmer.ps1` and `Localization.ps1` in the same directory**.
 
 ## Getting started
 
@@ -42,8 +45,9 @@ No external PowerShell modules or installation process are required. This is a *
 2. Double-click **`Start-FolderSizeTrimmer.cmd`**.
 3. Choose the folder you want to analyze.
 4. Enter the maximum desired folder size in GB, e.g. `4,5`.
-5. Click **Analysieren** to scan the folder and review the proposed deletions.
-6. Only if the preview is correct, click **Dateien löschen** and confirm the warning.
+5. Use the **Deutsch / English** selector in the upper-right corner to choose your preferred interface language.
+6. Click **Analyze / Analysieren** to scan the folder and review the proposed deletions.
+7. Only if the preview is correct, click **Delete files / Dateien löschen** and confirm the warning.
 
 You can also launch the GUI directly from PowerShell:
 
@@ -52,6 +56,12 @@ powershell.exe -NoLogo -NoProfile -STA -ExecutionPolicy Bypass -File ".\FolderSi
 ```
 
 The provided `.cmd` launcher uses the same PowerShell startup options. Review scripts before running them.
+
+## Languages / Sprachen
+
+The interface supports **German (Deutsch)** and **English**. You can change the language **without restarting** by using the drop-down menu in the upper-right corner. The language applies to labels, preview column headers, status information, safety prompts, most validation errors, and the About dialog. File names and Windows-originated exception messages are not translated.
+
+Your selection is stored in `%APPDATA%\\FolderSizeTrimmer\\settings.json` (for example, `C:\\Users\\<you>\\AppData\\Roaming\\FolderSizeTrimmer\\settings.json`). The first launch defaults to German. If the settings file cannot be written, the selection still works for the current session. All translation strings are maintained in **`Localization.ps1`**; file size values follow the selected language's number format. Both `4,5` and `4.5` are valid input values.
 
 ## How the size limit works
 
@@ -75,6 +85,7 @@ The application uses **decimal gigabytes**: **1 GB = 1,000,000,000 bytes** (not 
 ```text
 FolderSizeTrimmer/
 ├── FolderSizeTrimmer.ps1       # Windows Forms application
+├── Localization.ps1           # German/English strings and language settings
 ├── Start-FolderSizeTrimmer.cmd # Double-click launcher
 ├── docs/
 │   └── README_DE.txt          # German quick-start guide
@@ -87,4 +98,4 @@ FolderSizeTrimmer/
 
 - GitHub: [@netdaemon91](https://github.com/netdaemon91)
 
-**Version:** 0.1
+**Version:** 0.2
