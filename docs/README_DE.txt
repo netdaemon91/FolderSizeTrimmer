@@ -1,4 +1,4 @@
-Folder Size Trimmer 0.2
+Folder Size Trimmer 0.3
 =======================
 Windows PowerShell 5.1 / Windows 10 oder 11
 Coded by NetDaemon
@@ -9,8 +9,9 @@ START
 2. Start-FolderSizeTrimmer.cmd doppelklicken.
 3. Überordner wählen und Zielgröße in GB angeben, z. B. 4,5.
 4. Oben rechts die Sprache wählen (Deutsch / English).
-5. "Analysieren" bzw. "Analyze" anklicken und die Dateiliste prüfen.
-6. Nur bei Bedarf "Dateien löschen" bzw. "Delete files" wählen und bestätigen.
+5. Löschreihenfolge auswählen: Größte zuerst (Standard) oder Kleinste zuerst.
+6. "Analysieren" bzw. "Analyze" anklicken und die Dateiliste prüfen.
+7. Nur bei Bedarf "Dateien löschen" bzw. "Delete files" wählen und bestätigen.
 
 SPRACHEN
 --------
@@ -21,10 +22,21 @@ SPRACHEN
 - Die Übersetzungen stehen in Localization.ps1.
 - Beide PS1-Dateien müssen im selben Verzeichnis liegen.
 
+LOESCHREIHENFOLGE
+-----------------
+- Größte Dateien zuerst: weniger Löschvorgänge, große Dateien verschwinden zuerst.
+- Kleinste Dateien zuerst: kleine Dateien werden bevorzugt entfernt; es können
+  deutlich mehr Löschvorgänge nötig sein.
+- Die Standardreihenfolge ist bei jedem Start "Größte zuerst".
+- Ein Umschalten verwirft die bisherige Vorschau. Danach erneut analysieren!
+- Im Bestätigungsdialog und Löschprotokoll steht die gewählte Reihenfolge.
+- Die Auswahl ist während des Scans und der Bereinigung gesperrt.
+- In beiden Modi wird bis zum ersten Unterschreiten des Limits gelöscht.
+
 FUNKTION
 --------
 - Scannt normale Dateien in allen Unterordnern (auch versteckte Dateien).
-- Sortiert nach Dateigröße absteigend.
+- Sortiert nach Dateigröße auf- oder absteigend.
 - Berechnet nur so viele Löschungen wie nötig, um die Gesamtgröße
   erstmals STRIKT unter den Zielwert zu bringen.
 - Benutzt dezimale GB: 1 GB = 1.000.000.000 Byte, nicht GiB.
