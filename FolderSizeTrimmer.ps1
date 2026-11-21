@@ -1,4 +1,4 @@
-# Folder Size Trimmer 0.1
+﻿# Folder Size Trimmer 0.2
 # Windows PowerShell 5.1 / Windows Forms
 # Coded by NetDaemon
 # Scans a directory recursively, previews files largest-first and, on explicit
@@ -30,8 +30,40 @@ $script:deletedCount = 0
 $script:deleteError = ''
 $script:logLines = New-Object 'System.Collections.Generic.List[string]'
 
+# Separate, UTF-8-BOM translation resource (DE/EN).
+. (Join-Path $PSScriptRoot 'Localization.ps1')
+
 function Format-GB([decimal]$bytes) {
-    return ('{0:N4}' -f ($bytes / $script:unitBytes))
+    $culture = if ($script:language -eq 'de') {
+        [System.Globalization.CultureInfo]::GetCultureInfo('de-DE')
+    } else {
+        [System.Globalization.CultureInfo]::GetCultureInfo('en-US')
+    }
+    return [string]::Format($culture, '{0:N4}', ($bytes / $script:unitBytes))
+}
+
+function Render-Status {
+    if ($null -eq $lblStatus) { return }
+    if ($script:statusKey -eq 'verificationDone') {
+        $message = [string]::Format((T 'verificationSummary'), $script:deletedCount, (Format-GB $script:totalBytes))
+        $message += ' ' + $(if ($script:lastResult.goal) { T 'verificationMet' } else { T 'verificationNotMet' })
+        if ($script:cancelRequested) { $message += ' ' + (T 'verificationCanceled') }
+        if ($script:deleteError) {
+            $message += ' ' + [string]::Format((T 'verificationError'), $script:deleteError)
+        }
+        if ($script:lastLogFile) {
+            $message += ' ' + [string]::Format((T 'verificationLog'), $script:lastLogFile)
+        }
+        $lblStatus.Text = $message
+    } else {
+        $lblStatus.Text = [string]::Format((T $script:statusKey), [object[]]$script:statusArgs)
+    }
+}
+
+function Set-Status([string]$key, [object[]]$values = @()) {
+    $script:statusKey = $key
+    $script:statusArgs = @($values)
+    Render-Status
 }
 
 function Show-Error([string]$message) {
@@ -45,12 +77,14 @@ function Show-Error([string]$message) {
 
 function Clear-Preview {
     $script:plan = @()
+    $script:analysisComplete = $false
+    $script:lastResult = $null
     $grid.RowCount = 0
     $lblTotal.Text = '-'
     $lblResult.Text = '-'
     $lblCount.Text = '-'
     $lblFileCount.Text = '-'
-    $lblStatus.Text = 'Ordner auswählen, Zielgröße eingeben und analysieren.'
+    Set-Status 'ready'
     $btnDelete.Enabled = $false
 }
 
@@ -86,9 +120,9 @@ function Test-NoJunctionParents([string]$folder) {
     $dir = New-Object System.IO.DirectoryInfo($folder)
     while ($null -ne $dir) {
         $dir.Refresh()
-        if (-not $dir.Exists) { throw "Ordner existiert nicht: $($dir.FullName)" }
+        if (-not $dir.Exists) { throw ([string]::Format((T 'folderDisappeared'), $dir.FullName)) }
         if (($dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw "Verknüpfte Ordner/Junctions sind nicht erlaubt: $($dir.FullName)"
+            throw ([string]::Format((T 'linkedFolder'), $dir.FullName))
         }
         $dir = $dir.Parent
     }
@@ -96,16 +130,16 @@ function Test-NoJunctionParents([string]$folder) {
 
 function Get-SafeRoot([string]$userInput) {
     $text = $userInput.Trim()
-    if ([string]::IsNullOrWhiteSpace($text)) { throw 'Bitte einen Ordner auswählen.' }
+    if ([string]::IsNullOrWhiteSpace($text)) { throw (T 'missingFolder') }
 
     $full = [System.IO.Path]::GetFullPath($text)
     if (-not [System.IO.Directory]::Exists($full)) {
-        throw "Ordner nicht gefunden: $full"
+        throw ([string]::Format((T 'folderNotFound'), $full))
     }
     $normalized = $full.TrimEnd([char[]]@('\', '/'))
     $volumeRoot = ([System.IO.Path]::GetPathRoot($full)).TrimEnd([char[]]@('\', '/'))
     if ($normalized.Equals($volumeRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Ein ganzes Laufwerk oder der Stamm einer Netzwerkfreigabe ist nicht erlaubt.'
+        throw (T 'wholeRootNotAllowed')
     }
 
     Test-NoJunctionParents $full
@@ -118,7 +152,7 @@ function Get-TargetBytes([string]$inputText) {
     $style = [System.Globalization.NumberStyles]::AllowDecimalPoint
     $culture = [System.Globalization.CultureInfo]::InvariantCulture
     if (-not [decimal]::TryParse($s, $style, $culture, [ref]$value) -or $value -le 0) {
-        throw 'Ungültige Zielgröße. Beispiele: 4,5 oder 4.5 (GB, größer als 0).'
+        throw (T 'invalidTarget')
     }
     return ($value * $script:unitBytes)
 }
@@ -134,10 +168,10 @@ function Start-Enumeration([string]$mode) {
     if ($mode -eq 'analyze') {
         $script:files = New-Object 'System.Collections.Generic.List[object]'
         $script:phase = 'scan'
-        $lblStatus.Text = 'Analysiere Ordner und Unterordner ...'
+        Set-Status 'analyzing'
     } else {
         $script:phase = 'verify'
-        $lblStatus.Text = 'Prüfe die tatsächlich verbleibende Gesamtgröße ...'
+        Set-Status 'verifying'
     }
     $progress.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
     Update-Controls
@@ -160,6 +194,8 @@ function Complete-Analysis {
 
     $script:plan = @($preview.ToArray())
     $script:remainingBytes = $remaining
+    $script:analysisComplete = $true
+    $script:lastResult = $null
     $grid.RowCount = $script:plan.Count
     $lblTotal.Text = "$(Format-GB $script:totalBytes) GB"
     $lblResult.Text = "$(Format-GB $remaining) GB"
@@ -168,9 +204,9 @@ function Complete-Analysis {
 
     Finish-Work
     if ($script:plan.Count -eq 0) {
-        $lblStatus.Text = "Bereits unter dem Limit. Keine Löschung nötig. ($($script:ignoredLinks) Verknüpfungen ignoriert)"
+        Set-Status 'alreadyUnder' @($script:ignoredLinks)
     } else {
-        $lblStatus.Text = "Vorschau fertig: $($script:plan.Count) Dateien werden gelöscht. $($script:ignoredLinks) Verknüpfungen ignoriert."
+        Set-Status 'previewReady' @($script:plan.Count, $script:ignoredLinks)
     }
 }
 
@@ -190,26 +226,22 @@ function Complete-Verification {
             )
             $script:logLines.ToArray() | Set-Content -LiteralPath $logFile -Encoding UTF8 -ErrorAction Stop
         } catch {
-            $logFile = '(Protokoll konnte nicht gespeichert werden)'
+            $logFile = (T 'logUnavailable')
         }
     }
 
     Finish-Work
     $script:plan = @()  # old preview must not be executed twice
+    $script:analysisComplete = $false
+    $script:lastResult = @{ goal = $goalMet; bytes = $finalBytes; count = $finalCount; deleted = $nDeleted }
+    $script:lastLogFile = $logFile
     $grid.RowCount = 0
     $lblTotal.Text = "$(Format-GB $finalBytes) GB"
-    $lblResult.Text = $(if ($goalMet) { 'Ziel erreicht' } else { 'Ziel nicht erreicht' })
-    $lblCount.Text = "${nDeleted} gelöscht"
+    $lblResult.Text = $(if ($goalMet) { T 'goalReached' } else { T 'goalNotReached' })
+    $lblCount.Text = [string]::Format((T 'deletedCount'), $nDeleted)
     $lblFileCount.Text = [string]$finalCount
     Update-Controls
-
-    $message = "Gelöscht: $nDeleted Datei(en). Verbleibend: $(Format-GB $finalBytes) GB."
-    if ($goalMet) { $message += ' Ziel unterschritten.' }
-    else { $message += ' Ziel noch nicht unterschritten.' }
-    if ($wasCancelled) { $message += ' Vorgang abgebrochen.' }
-    if ($errors) { $message += " Fehler: $errors" }
-    if ($logFile) { $message += " Protokoll: $logFile" }
-    $lblStatus.Text = $message
+    Set-Status 'verificationDone'
 }
 
 function Tick-Enumeration {
@@ -220,7 +252,7 @@ function Tick-Enumeration {
             $script:plan = @()
             $grid.RowCount = 0
             Finish-Work
-            $lblStatus.Text = 'Analyse abgebrochen. Es wurde nichts gelöscht.'
+            Set-Status 'analysisCancelled'
             return
         }
 
@@ -263,7 +295,11 @@ function Tick-Enumeration {
             }
         }
     }
-    $lblStatus.Text = "$(if ($script:scanMode -eq 'verify') { 'Prüfung' } else { 'Analyse' }) läuft ... $($script:scanCount) Dateien erfasst."
+    if ($script:scanMode -eq 'verify') {
+        Set-Status 'verifyProgress' @($script:scanCount)
+    } else {
+        Set-Status 'analyzeProgress' @($script:scanCount)
+    }
 }
 
 function Assert-UnchangedFile($file) {
@@ -271,7 +307,7 @@ function Assert-UnchangedFile($file) {
     $separator = [string][System.IO.Path]::DirectorySeparatorChar
     if (-not $path.StartsWith($script:rootPath + $separator,
             [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Datei liegt außerhalb des ausgewählten Ordners: $path"
+        throw ([string]::Format((T 'fileOutside'), $path))
     }
 
     # All directory segments inside the target must still be real directories.
@@ -279,26 +315,26 @@ function Assert-UnchangedFile($file) {
     while ($true) {
         $di = New-Object System.IO.DirectoryInfo($parent)
         $di.Refresh()
-        if (-not $di.Exists) { throw "Übergeordneter Ordner fehlt: $parent" }
+        if (-not $di.Exists) { throw ([string]::Format((T 'parentMissing'), $parent)) }
         if (($di.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw "Ordner wurde zur Verknüpfung: $parent"
+            throw ([string]::Format((T 'parentLinked'), $parent))
         }
         if ($parent.Equals($script:rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
             break
         }
         $newParent = [System.IO.Path]::GetDirectoryName($parent)
-        if (-not $newParent -or $newParent -eq $parent) { throw 'Unsicherer Ordnerpfad.' }
+        if (-not $newParent -or $newParent -eq $parent) { throw (T 'unsafeParent') }
         $parent = $newParent
     }
 
     $current = New-Object System.IO.FileInfo($path)
     $current.Refresh()
-    if (-not $current.Exists) { throw "Datei existiert nicht mehr: $path" }
+    if (-not $current.Exists) { throw ([string]::Format((T 'fileGone'), $path)) }
     if (($current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw 'Datei wurde zu einer Verknüpfung.'
+        throw (T 'fileLinked')
     }
     if ($current.Length -ne $file.Bytes -or $current.LastWriteTimeUtc.Ticks -ne $file.WriteTicks) {
-        throw 'Datei wurde seit der Analyse verändert. Bitte erneut analysieren.'
+        throw (T 'fileChanged')
     }
 }
 
@@ -324,7 +360,7 @@ function Tick-Deletion {
         $script:logLines.Add(("{0:yyyy-MM-dd HH:mm:ss}`t{1}`t{2}" -f
             (Get-Date), $file.Bytes, $file.Path))
         $progress.Value = [Math]::Min(100, [int](100 * $script:deleteIndex / $script:plan.Count))
-        $lblStatus.Text = "Gelöscht: $($script:deletedCount)/$($script:plan.Count) | Rechnerischer Rest: $(Format-GB $script:remainingBytes) GB"
+        Set-Status 'deleteProgress' @($script:deletedCount, $script:plan.Count, (Format-GB $script:remainingBytes))
     } catch {
         # Never delete files beyond those explicitly approved in the preview.
         # Stop at the first error instead of silently advancing to smaller files.
@@ -351,19 +387,32 @@ $title.Location = New-Object System.Drawing.Point(20, 14)
 $form.Controls.Add($title)
 
 $subtitle = New-Object System.Windows.Forms.Label
-$subtitle.Text = 'Dateien von groß nach klein entfernen, bis die gewünschte Gesamtgröße unterschritten ist.'
+$subtitle.Text = T 'subtitle'
 $subtitle.AutoSize = $true
 $subtitle.ForeColor = [System.Drawing.Color]::DimGray
 $subtitle.Location = New-Object System.Drawing.Point(23, 52)
 $form.Controls.Add($subtitle)
 
 $btnAbout = New-Object System.Windows.Forms.Button
-$btnAbout.Text = 'About'
+$btnAbout.Text = T 'aboutButton'
 $btnAbout.SetBounds(838, 20, 100, 32)
 $form.Controls.Add($btnAbout)
 
+$lblLanguage = New-Object System.Windows.Forms.Label
+$lblLanguage.Text = T 'languageLabel'
+$lblLanguage.SetBounds(637, 27, 72, 22)
+$form.Controls.Add($lblLanguage)
+
+$cmbLanguage = New-Object System.Windows.Forms.ComboBox
+$cmbLanguage.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+$cmbLanguage.SetBounds(710, 23, 113, 28)
+[void]$cmbLanguage.Items.Add('Deutsch')
+[void]$cmbLanguage.Items.Add('English')
+$cmbLanguage.SelectedIndex = $(if ($script:language -eq 'en') { 1 } else { 0 })
+$form.Controls.Add($cmbLanguage)
+
 $lblFolder = New-Object System.Windows.Forms.Label
-$lblFolder.Text = 'Überordner (alle echten Unterordner werden durchsucht)'
+$lblFolder.Text = T 'folderLabel'
 $lblFolder.SetBounds(20, 91, 730, 22)
 $form.Controls.Add($lblFolder)
 
@@ -372,12 +421,12 @@ $txtFolder.SetBounds(20, 115, 805, 27)
 $form.Controls.Add($txtFolder)
 
 $btnBrowse = New-Object System.Windows.Forms.Button
-$btnBrowse.Text = 'Durchsuchen ...'
+$btnBrowse.Text = T 'browse'
 $btnBrowse.SetBounds(835, 113, 105, 30)
 $form.Controls.Add($btnBrowse)
 
 $lblLimit = New-Object System.Windows.Forms.Label
-$lblLimit.Text = 'Zielgröße in GB'
+$lblLimit.Text = T 'targetSizeLabel'
 $lblLimit.SetBounds(20, 159, 145, 22)
 $form.Controls.Add($lblLimit)
 
@@ -387,25 +436,27 @@ $txtLimit.SetBounds(20, 183, 133, 28)
 $form.Controls.Add($txtLimit)
 
 $lblHint = New-Object System.Windows.Forms.Label
-$lblHint.Text = 'Dezimale GB (1 GB = 1.000.000.000 Byte). Komma oder Punkt erlaubt.'
+$lblHint.Text = T 'hint'
 $lblHint.ForeColor = [System.Drawing.Color]::DimGray
 $lblHint.SetBounds(167, 188, 612, 23)
 $form.Controls.Add($lblHint)
 
 $btnAnalyze = New-Object System.Windows.Forms.Button
-$btnAnalyze.Text = 'Analysieren'
+$btnAnalyze.Text = T 'analyze'
 $btnAnalyze.SetBounds(806, 177, 134, 36)
 $form.Controls.Add($btnAnalyze)
 
 $group = New-Object System.Windows.Forms.GroupBox
-$group.Text = 'Übersicht'
+$group.Text = T 'summaryGroup'
 $group.SetBounds(20, 227, 920, 94)
 $form.Controls.Add($group)
 
+$script:statCaptions = @{}
 function Add-Stat([System.Windows.Forms.Control]$container, [string]$caption,
                   [int]$x, [int]$w) {
     $head = New-Object System.Windows.Forms.Label
-    $head.Text = $caption
+    $head.Text = T $caption
+    $script:statCaptions[$caption] = $head
     $head.ForeColor = [System.Drawing.Color]::DimGray
     $head.SetBounds($x, 21, $w, 20)
     $container.Controls.Add($head)
@@ -417,13 +468,13 @@ function Add-Stat([System.Windows.Forms.Control]$container, [string]$caption,
     return $value
 }
 
-$lblTotal = Add-Stat $group 'Gesamtgröße' 18 210
-$lblResult = Add-Stat $group 'Größe nach Bereinigung' 250 224
-$lblCount = Add-Stat $group 'Betroffene Dateien' 498 185
-$lblFileCount = Add-Stat $group 'Dateien insgesamt' 707 190
+$lblTotal = Add-Stat $group 'totalLabel' 18 210
+$lblResult = Add-Stat $group 'projectedLabel' 250 224
+$lblCount = Add-Stat $group 'affectedLabel' 498 185
+$lblFileCount = Add-Stat $group 'totalFilesLabel' 707 190
 
 $previewTitle = New-Object System.Windows.Forms.Label
-$previewTitle.Text = 'Löschvorschau (größte Datei zuerst)'
+$previewTitle.Text = T 'previewTitle'
 $previewTitle.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
 $previewTitle.SetBounds(20, 336, 500, 24)
 $form.Controls.Add($previewTitle)
@@ -440,9 +491,9 @@ $grid.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMod
 $grid.VirtualMode = $true
 $grid.BackgroundColor = [System.Drawing.Color]::White
 $grid.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-[void]$grid.Columns.Add('SizeGB', 'Größe (GB)')
-[void]$grid.Columns.Add('Name', 'Datei')
-[void]$grid.Columns.Add('FilePath', 'Pfad')
+[void]$grid.Columns.Add('SizeGB', (T 'colSize'))
+[void]$grid.Columns.Add('Name', (T 'colFile'))
+[void]$grid.Columns.Add('FilePath', (T 'colPath'))
 $grid.Columns[0].FillWeight = 18
 $grid.Columns[1].FillWeight = 30
 $grid.Columns[2].FillWeight = 70
@@ -470,22 +521,60 @@ $progress.Maximum = 100
 $form.Controls.Add($progress)
 
 $lblStatus = New-Object System.Windows.Forms.Label
-$lblStatus.Text = 'Ordner auswählen, Zielgröße eingeben und analysieren.'
+$lblStatus.Text = T 'ready'
 $lblStatus.AutoEllipsis = $true
 $lblStatus.SetBounds(20, 622, 916, 21)
 $form.Controls.Add($lblStatus)
 
 $btnDelete = New-Object System.Windows.Forms.Button
-$btnDelete.Text = 'Dateien löschen'
+$btnDelete.Text = T 'deleteButton'
 $btnDelete.SetBounds(642, 645, 151, 28)
 $btnDelete.Enabled = $false
 $form.Controls.Add($btnDelete)
 
 $btnCancel = New-Object System.Windows.Forms.Button
-$btnCancel.Text = 'Abbrechen'
+$btnCancel.Text = T 'cancelButton'
 $btnCancel.SetBounds(803, 645, 137, 28)
 $btnCancel.Enabled = $false
 $form.Controls.Add($btnCancel)
+
+function Apply-Language {
+    $subtitle.Text = T 'subtitle'
+    $lblLanguage.Text = T 'languageLabel'
+    $btnAbout.Text = T 'aboutButton'
+    $lblFolder.Text = T 'folderLabel'
+    $btnBrowse.Text = T 'browse'
+    $lblLimit.Text = T 'targetSizeLabel'
+    $lblHint.Text = T 'hint'
+    $btnAnalyze.Text = T 'analyze'
+    $group.Text = T 'summaryGroup'
+    foreach ($key in @('totalLabel','projectedLabel','affectedLabel','totalFilesLabel')) {
+        $script:statCaptions[$key].Text = T $key
+    }
+    $previewTitle.Text = T 'previewTitle'
+    $grid.Columns[0].HeaderText = T 'colSize'
+    $grid.Columns[1].HeaderText = T 'colFile'
+    $grid.Columns[2].HeaderText = T 'colPath'
+    $btnDelete.Text = T 'deleteButton'
+    $btnCancel.Text = T 'cancelButton'
+    if ($script:analysisComplete) {
+        $lblTotal.Text = "$(Format-GB $script:totalBytes) GB"
+        $lblResult.Text = "$(Format-GB $script:remainingBytes) GB"
+    } elseif ($null -ne $script:lastResult) {
+        $lblTotal.Text = "$(Format-GB $script:lastResult.bytes) GB"
+        $lblResult.Text = $(if ($script:lastResult.goal) { T 'goalReached' } else { T 'goalNotReached' })
+        $lblCount.Text = [string]::Format((T 'deletedCount'), $script:lastResult.deleted)
+    }
+    $grid.Invalidate()
+    Render-Status
+}
+
+$cmbLanguage.add_SelectedIndexChanged({
+    $script:language = $(if ($cmbLanguage.SelectedIndex -eq 1) { 'en' } else { 'de' })
+    Save-AppLanguage
+    Apply-Language
+})
+Apply-Language
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 15
@@ -500,8 +589,8 @@ $timer.add_Tick({
         $message = $_.Exception.Message
         Finish-Work
         Clear-Preview
-        $lblStatus.Text = "Fehler: $message"
-        Show-Error "Vorgang gestoppt. Es wurden keine weiteren Dateien gelöscht.`r`n`r`n$message"
+        Set-Status 'errorStatus' @($message)
+        Show-Error ((T 'stoppedWithError') + [Environment]::NewLine + [Environment]::NewLine + $message)
     }
 })
 
@@ -510,7 +599,7 @@ $txtLimit.add_TextChanged({ if ($script:phase -eq 'idle') { Clear-Preview } })
 
 $btnBrowse.add_Click({
     $picker = New-Object System.Windows.Forms.FolderBrowserDialog
-    $picker.Description = 'Ordner auswählen, dessen Dateien verkleinert werden sollen'
+    $picker.Description = T 'pickerDescription'
     $picker.ShowNewFolderButton = $false
     if ([System.IO.Directory]::Exists($txtFolder.Text)) {
         $picker.SelectedPath = $txtFolder.Text
@@ -542,20 +631,11 @@ $btnAnalyze.add_Click({
 $btnDelete.add_Click({
     if ($script:phase -ne 'idle' -or $script:plan.Count -eq 0) { return }
     $toRemove = $script:totalBytes - $script:remainingBytes
-    $confirmText = @"
-ACHTUNG: Die Dateien werden dauerhaft gelöscht (nicht in den Papierkorb)!
-
-Ordner: $($script:rootPath)
-Geplante Dateien: $($script:plan.Count)
-Dateigröße zum Löschen: $(Format-GB $toRemove) GB
-Erwarteter Rest: $(Format-GB $script:remainingBytes) GB
-
-Die Löschung stoppt beim ersten Fehler. Nur die angezeigten Dateien dürfen gelöscht werden.
-
-Jetzt wirklich löschen?
-"@
+    $confirmText = [string]::Format((T 'confirmBody'),
+        $script:rootPath, $script:plan.Count,
+        (Format-GB $toRemove), (Format-GB $script:remainingBytes))
     $answer = [System.Windows.Forms.MessageBox]::Show(
-        $confirmText, 'Dauerhafte Löschung bestätigen',
+        $confirmText, (T 'confirmTitle'),
         [System.Windows.Forms.MessageBoxButtons]::YesNo,
         [System.Windows.Forms.MessageBoxIcon]::Warning,
         [System.Windows.Forms.MessageBoxDefaultButton]::Button2
@@ -568,14 +648,14 @@ Jetzt wirklich löschen?
     $script:deleteError = ''
     $script:remainingBytes = $script:totalBytes
     $script:logLines = New-Object 'System.Collections.Generic.List[string]'
-    $script:logLines.Add("Folder Size Trimmer 0.1 | $(Get-Date -Format s)")
+    $script:logLines.Add("Folder Size Trimmer 0.2 | $(Get-Date -Format s)")
     $script:logLines.Add("Ordner: $($script:rootPath)")
     $script:logLines.Add("Ziel (Bytes): $($script:targetBytes)")
     $script:logLines.Add('Datum / Uhrzeit`tBytes`tDateipfad')
     $script:phase = 'delete'
     $progress.Style = [System.Windows.Forms.ProgressBarStyle]::Blocks
     $progress.Value = 0
-    $lblStatus.Text = 'Bereinigung läuft ...'
+    Set-Status 'deleteRunning'
     Update-Controls
     $timer.Start()
 })
@@ -584,14 +664,14 @@ $btnCancel.add_Click({
     if ($script:phase -eq 'scan' -or $script:phase -eq 'delete') {
         $script:cancelRequested = $true
         $btnCancel.Enabled = $false
-        $lblStatus.Text = 'Abbruch angefordert ...'
+        Set-Status 'cancelRequested'
     }
 })
 
 $btnAbout.add_Click({
     [void][System.Windows.Forms.MessageBox]::Show(
-        "Folder Size Trimmer`r`nVersion 0.1`r`n`r`nCoded by NetDaemon`r`nOriginal idea: NetDaemon`r`nhttps://ntdmn.xyz/`r`n`r`nVorschau und gezielte Größenreduzierung per PowerShell.",
-        'About Folder Size Trimmer',
+        (T 'aboutBody'),
+        (T 'aboutTitle'),
         [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]::Information
     )
@@ -601,8 +681,8 @@ $form.add_FormClosing({
     param($sender, $e)
     if ($script:phase -ne 'idle') {
         $answer = [System.Windows.Forms.MessageBox]::Show(
-            'Ein Vorgang läuft. Wirklich beenden? Bereits gelöschte Dateien bleiben gelöscht.',
-            'Vorgang läuft',
+            (T 'closingBody'),
+            (T 'closingTitle'),
             [System.Windows.Forms.MessageBoxButtons]::YesNo,
             [System.Windows.Forms.MessageBoxIcon]::Warning,
             [System.Windows.Forms.MessageBoxDefaultButton]::Button2
