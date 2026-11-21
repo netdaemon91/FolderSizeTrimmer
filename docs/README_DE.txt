@@ -1,4 +1,4 @@
-Folder Size Trimmer 0.1
+Folder Size Trimmer 0.2
 =======================
 Windows PowerShell 5.1 / Windows 10 oder 11
 Coded by NetDaemon
@@ -8,8 +8,18 @@ START
 1. Repository herunterladen und entpacken.
 2. Start-FolderSizeTrimmer.cmd doppelklicken.
 3. Überordner wählen und Zielgröße in GB angeben, z. B. 4,5.
-4. "Analysieren" anklicken und die Liste der betroffenen Dateien prüfen.
-5. Nur bei Bedarf "Dateien löschen" wählen und den Warndialog bestätigen.
+4. Oben rechts die Sprache wählen (Deutsch / English).
+5. "Analysieren" bzw. "Analyze" anklicken und die Dateiliste prüfen.
+6. Nur bei Bedarf "Dateien löschen" bzw. "Delete files" wählen und bestätigen.
+
+SPRACHEN
+--------
+- Die GUI kann ohne Neustart zwischen Deutsch und Englisch wechseln.
+- Buttons, Vorschau, Meldungen, Sicherheitsdialoge und About sind übersetzt.
+- Die Auswahl wird unter %APPDATA%\\FolderSizeTrimmer\\settings.json gespeichert.
+- Ohne gespeicherte Einstellung startet das Programm auf Deutsch.
+- Die Übersetzungen stehen in Localization.ps1.
+- Beide PS1-Dateien müssen im selben Verzeichnis liegen.
 
 FUNKTION
 --------
