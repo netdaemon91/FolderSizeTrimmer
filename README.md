@@ -1,6 +1,6 @@
 # Folder Size Trimmer
 
-[![Version](https://img.shields.io/badge/version-0.2-blue)](https://github.com/netdaemon91/FolderSizeTrimmer)
+[![Version](https://img.shields.io/badge/version-0.3-blue)](https://github.com/netdaemon91/FolderSizeTrimmer)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)](https://github.com/netdaemon91/FolderSizeTrimmer)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 ![GUI](https://img.shields.io/badge/GUI-Windows%20Forms-informational)
@@ -8,9 +8,9 @@
 [![Last commit](https://img.shields.io/github/last-commit/netdaemon91/FolderSizeTrimmer)](https://github.com/netdaemon91/FolderSizeTrimmer/commits/main)
 [![Stars](https://img.shields.io/github/stars/netdaemon91/FolderSizeTrimmer)](https://github.com/netdaemon91/FolderSizeTrimmer/stargazers)
 
-**A lightweight Windows utility that trims a folder to a chosen size by deleting its largest files first.**
+**A lightweight Windows utility that trims a folder to a chosen size by deleting files in a configurable size order.**
 
-Folder Size Trimmer scans a selected directory and all of its regular subdirectories, calculates the total file size, and prepares a deletion plan from **largest to smallest**. The plan stops as soon as the remaining total would be **strictly below** your target size. You can inspect the plan in a simple Windows Forms GUI before deciding whether to delete anything.
+Folder Size Trimmer scans a selected directory and all of its regular subdirectories, calculates the total file size, and prepares a deletion plan from **largest to smallest (default)** or **smallest to largest**. The plan stops as soon as the remaining total would be **strictly below** your target size. You can inspect the plan in a simple Windows Forms GUI before deciding whether to delete anything.
 
 > [!CAUTION]
 > **Deletion is permanent.** Files are removed directly, **not sent to the Recycle Bin**. Always preview the plan and test on a disposable folder first. Cancelling cannot restore files already removed.
@@ -18,7 +18,8 @@ Folder Size Trimmer scans a selected directory and all of its regular subdirecto
 ## Features
 
 - **Recursive scan** of files in a selected directory, including hidden files.
-- **Largest-first deletion plan**, with consistent ordering when file sizes match.
+- **Two deletion orders:** largest files first (default) or smallest files first; consistent path-based ordering when sizes match.
+- **Mode-safe previews:** changing the deletion order clears the old preview and requires a new scan, preventing accidental deletion with a stale plan.
 - **Custom size limit** in decimal GB, accepting either a comma or period (for example, `4,5` or `4.5`).
 - **Preview before deletion**, showing file sizes, names, paths, file count, and the projected remaining size.
 - **Separate confirmation dialog** before any files are deleted.
@@ -46,8 +47,9 @@ No external PowerShell modules or installation process are required. This is a *
 3. Choose the folder you want to analyze.
 4. Enter the maximum desired folder size in GB, e.g. `4,5`.
 5. Use the **Deutsch / English** selector in the upper-right corner to choose your preferred interface language.
-6. Click **Analyze / Analysieren** to scan the folder and review the proposed deletions.
-7. Only if the preview is correct, click **Delete files / Dateien löschen** and confirm the warning.
+6. Set **Deletion order / Löschreihenfolge** to **Largest files first / Größte Dateien zuerst** (default) or **Smallest files first / Kleinste Dateien zuerst**.
+7. Click **Analyze / Analysieren** to scan the folder and review the proposed deletions.
+8. Only if the preview is correct, click **Delete files / Dateien löschen** and confirm the warning (which shows the chosen order).
 
 You can also launch the GUI directly from PowerShell:
 
@@ -65,9 +67,13 @@ Your selection is stored in `%APPDATA%\\FolderSizeTrimmer\\settings.json` (for e
 
 ## How the size limit works
 
-Suppose a folder contains files sized **8.5 GB, 4.2 GB, 2.8 GB, 1.5 GB, 0.8 GB, and 0.2 GB** (18.0 GB total). With a **5.0 GB** target, the planned deletions are 8.5 GB, then 4.2 GB, then 2.8 GB. The remaining total becomes **2.5 GB**, below the target.
+**Largest-first** quickly removes the biggest files and usually requires fewer deletions. **Smallest-first** keeps larger files for longer, but can remove many small files and may take considerably longer. In both modes, deletion stops at the first point where the remaining total is **strictly below** the selected limit. This is not a best-fit packing algorithm. The selected mode is included in the preview heading, confirmation prompt, and deletion log.
 
-The application uses **decimal gigabytes**: **1 GB = 1,000,000,000 bytes** (not GiB). It does not delete folders, only files. It does **not** attempt to optimize the combination of files for the closest possible remaining size; it strictly follows descending file size.
+Changing the mode clears any previous preview; you must click **Analyze** again before deleting anything. The default on each launch is **Largest files first**.
+
+Suppose a folder contains files sized **8.5 GB, 4.2 GB, 2.8 GB, 1.5 GB, 0.8 GB, and 0.2 GB** (18.0 GB total). With a **5.0 GB** target, **largest-first** deletes 8.5 GB, then 4.2 GB, then 2.8 GB, leaving **2.5 GB**. **Smallest-first** deletes 0.2 GB, 0.8 GB, 1.5 GB, 2.8 GB, 4.2 GB, then 8.5 GB, leaving **0 GB**; the size limit is only crossed after the largest file is also removed.
+
+The application uses **decimal gigabytes**: **1 GB = 1,000,000,000 bytes** (not GiB). It does not delete folders, only files. It does **not** attempt to optimize the combination of files for the closest possible remaining size; it strictly follows the selected sort order.
 
 ## Safety and limitations
 
@@ -98,4 +104,4 @@ FolderSizeTrimmer/
 
 - GitHub: [@netdaemon91](https://github.com/netdaemon91)
 
-**Version:** 0.2
+**Version:** 0.3
