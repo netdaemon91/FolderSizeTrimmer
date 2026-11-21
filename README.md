@@ -1,6 +1,6 @@
 # Folder Size Trimmer
 
-[![Version](https://img.shields.io/badge/version-0.3-blue)](https://github.com/netdaemon91/FolderSizeTrimmer)
+[![Version](https://img.shields.io/badge/version-0.4-blue)](https://github.com/netdaemon91/FolderSizeTrimmer)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)](https://github.com/netdaemon91/FolderSizeTrimmer)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 ![GUI](https://img.shields.io/badge/GUI-Windows%20Forms-informational)
@@ -22,6 +22,9 @@ Folder Size Trimmer scans a selected directory and all of its regular subdirecto
 - **Mode-safe previews:** changing the deletion order clears the old preview and requires a new scan, preventing accidental deletion with a stale plan.
 - **Custom size limit** in decimal GB, accepting either a comma or period (for example, `4,5` or `4.5`).
 - **Preview before deletion**, showing file sizes, names, paths, file count, and the projected remaining size.
+- **Protect individual files** from the deletion preview; protection immediately recalculates which unprotected files would be removed.
+- **Manage protected files** in a small dialog to remove protection and recalculate the plan.
+- **Protection-aware safety checks:** protected paths can never be deleted; if the target is unreachable with the protected files, deletion is disabled.
 - **Separate confirmation dialog** before any files are deleted.
 - **Progress and cancellation controls** during scanning and deletion.
 - **Safety checks:** rejects drive/share roots, skips symbolic links and junctions, and rechecks each file's path, size, and modification time before deletion.
@@ -49,7 +52,9 @@ No external PowerShell modules or installation process are required. This is a *
 5. Use the **Deutsch / English** selector in the upper-right corner to choose your preferred interface language.
 6. Set **Deletion order / Löschreihenfolge** to **Largest files first / Größte Dateien zuerst** (default) or **Smallest files first / Kleinste Dateien zuerst**.
 7. Click **Analyze / Analysieren** to scan the folder and review the proposed deletions.
-8. Only if the preview is correct, click **Delete files / Dateien löschen** and confirm the warning (which shows the chosen order).
+8. Optional: select a row in the deletion preview and click **Protect selected / Auswahl schützen** to exclude the file. The plan updates immediately, and another file may take its place.
+9. Use **Manage protection / Schutz verwalten** to review protected file paths and remove protection from selected entries.
+10. Only if the preview is correct and the target is reachable, click **Delete files / Dateien löschen** and confirm the warning (which shows the chosen order).
 
 You can also launch the GUI directly from PowerShell:
 
@@ -75,16 +80,28 @@ Suppose a folder contains files sized **8.5 GB, 4.2 GB, 2.8 GB, 1.5 GB, 0.8 GB, 
 
 The application uses **decimal gigabytes**: **1 GB = 1,000,000,000 bytes** (not GiB). It does not delete folders, only files. It does **not** attempt to optimize the combination of files for the closest possible remaining size; it strictly follows the selected sort order.
 
+## File protection
+
+Only files listed in the **deletion preview** need protection: select a proposed deletion and choose **Protect selected**. The file is removed from the plan but continues to count toward the folder's total size. When the plan is recalculated, other files may move into the deletion preview, so **review the entire updated list**.
+
+Click **Manage protection** to see protected file paths and select **Remove protection** for a file you want to make eligible again. This is a small in-memory exclusion list, **not** a Windows file-permissions feature and **not** a persistent database.
+
+- Protection persists **within the current program session for the same analyzed folder**, including repeated scans and changes of deletion order.
+- Selecting a **different analyzed parent folder** clears the protection list. Closing the program also clears it.
+- Protection changes use the already-scanned file metadata; press **Analyze** again if files on disk have changed.
+- If the protected files keep the remaining size at or above the target even after all other files are scheduled for deletion, **deletion is disabled**. Remove some protections or raise the target size and analyze again.
+- The delete loop checks the protection list again immediately before removing each file.
+
 ## Safety and limitations
 
-- Scanning and previewing do **not** delete files.
+- Scanning, previewing, protecting and removing protection do **not** delete files.
 - Deleted files cannot be recovered through the app or Windows Recycle Bin.
 - An interrupted operation leaves previously deleted files deleted.
 - Linked directories/files (junctions and symbolic links) are skipped; drive and network-share roots are not accepted.
 - Locked, moved, modified, or unreadable files can interrupt the operation.
 - Avoid changing the selected folder while it is being scanned or trimmed.
 - The displayed sum is based on **logical file lengths**. Actual disk space reclaimed may differ for hard links, sparse files, compression, or filesystem overhead.
-- The GUI has not yet been validated in an automated Windows runtime test; use the initial version cautiously.
+- The GUI has not yet been validated in an automated Windows runtime test; use this release cautiously.
 
 ## Repository structure
 
@@ -104,4 +121,4 @@ FolderSizeTrimmer/
 
 - GitHub: [@netdaemon91](https://github.com/netdaemon91)
 
-**Version:** 0.3
+**Version:** 0.4
