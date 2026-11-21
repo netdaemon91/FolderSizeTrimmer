@@ -1,4 +1,4 @@
-Folder Size Trimmer 0.3
+Folder Size Trimmer 0.4
 =======================
 Windows PowerShell 5.1 / Windows 10 oder 11
 Coded by NetDaemon
@@ -11,7 +11,10 @@ START
 4. Oben rechts die Sprache wählen (Deutsch / English).
 5. Löschreihenfolge auswählen: Größte zuerst (Standard) oder Kleinste zuerst.
 6. "Analysieren" bzw. "Analyze" anklicken und die Dateiliste prüfen.
-7. Nur bei Bedarf "Dateien löschen" bzw. "Delete files" wählen und bestätigen.
+7. Bei Bedarf eine Datei in der Löschvorschau markieren und "Auswahl schützen"
+   (englisch: "Protect selected") anklicken. Der Löschplan wird sofort neu berechnet.
+8. Über "Schutz verwalten" können geschützte Dateien wieder freigegeben werden.
+9. Nur bei Bedarf "Dateien löschen" bzw. "Delete files" wählen und bestätigen.
 
 SPRACHEN
 --------
@@ -32,6 +35,21 @@ LOESCHREIHENFOLGE
 - Im Bestätigungsdialog und Löschprotokoll steht die gewählte Reihenfolge.
 - Die Auswahl ist während des Scans und der Bereinigung gesperrt.
 - In beiden Modi wird bis zum ersten Unterschreiten des Limits gelöscht.
+
+DATEISCHUTZ
+-----------
+- Dateien in der Löschvorschau markieren und "Auswahl schützen" anklicken.
+- Geschützte Dateien zählen weiterhin zur Gesamtgröße, werden aber nie gelöscht.
+- Eine andere Datei kann in den Löschplan nachrücken. Vorschau erneut kontrollieren!
+- "Schutz verwalten" zeigt die geschützten Dateipfade und bietet "Schutz entfernen".
+- Der Schutz ist ausschließlich für die aktuelle Programmsitzung gespeichert.
+  Er bleibt bei erneutem Scannen desselben Ordners und Wechsel der Reihenfolge aktiv.
+- Der Wechsel zu einem anderen analysierten Überordner verwirft die Schutzliste.
+- Wenn die Zielgröße wegen des Dateischutzes nicht unterschritten werden kann,
+  bleibt der Löschbutton deaktiviert.
+- Vor dem tatsächlichen Löschen wird der Schutz zusätzlich geprüft.
+- Schutzänderungen benötigen keinen neuen Scan, verwenden aber die beim letzten
+  Scan ermittelten Dateigrößen. Nach externen Änderungen erneut analysieren.
 
 FUNKTION
 --------
