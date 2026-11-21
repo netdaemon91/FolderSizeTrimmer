@@ -1,4 +1,4 @@
-﻿# Folder Size Trimmer 0.2
+﻿# Folder Size Trimmer 0.3
 # Windows PowerShell 5.1 / Windows Forms
 # Coded by NetDaemon
 # Scans a directory recursively, previews files largest-first and, on explicit
@@ -18,6 +18,9 @@ $script:totalBytes = [decimal]0
 $script:remainingBytes = [decimal]0
 $script:files = New-Object 'System.Collections.Generic.List[object]'
 $script:plan = @()
+$script:deleteOrder = 'largest'
+$script:planOrder = ''
+$script:updatingOrderLabels = $false
 $script:phase = 'idle'
 $script:cancelRequested = $false
 $script:scanMode = ''
@@ -40,6 +43,11 @@ function Format-GB([decimal]$bytes) {
         [System.Globalization.CultureInfo]::GetCultureInfo('en-US')
     }
     return [string]::Format($culture, '{0:N4}', ($bytes / $script:unitBytes))
+}
+
+function Get-OrderName([string]$order) {
+    if ($order -eq 'smallest') { return (T 'orderSmallest') }
+    return (T 'orderLargest')
 }
 
 function Render-Status {
@@ -77,6 +85,7 @@ function Show-Error([string]$message) {
 
 function Clear-Preview {
     $script:plan = @()
+    $script:planOrder = ''
     $script:analysisComplete = $false
     $script:lastResult = $null
     $grid.RowCount = 0
@@ -94,7 +103,8 @@ function Update-Controls {
     $txtLimit.Enabled = $idle
     $btnBrowse.Enabled = $idle
     $btnAnalyze.Enabled = $idle
-    $btnDelete.Enabled = $idle -and ($script:plan.Count -gt 0)
+    $cmbOrder.Enabled = $idle
+    $btnDelete.Enabled = $idle -and ($script:plan.Count -gt 0) -and ($script:planOrder -eq $script:deleteOrder)
     $btnCancel.Enabled = ($script:phase -eq 'scan' -or $script:phase -eq 'delete')
 }
 
@@ -179,9 +189,10 @@ function Start-Enumeration([string]$mode) {
 }
 
 function Complete-Analysis {
-    # Sort by byte size, descending; the path is only a deterministic tie-breaker.
+    # Sort files in the approved direction; the path is a deterministic tie-breaker.
+    $descending = ($script:planOrder -eq 'largest')
     $sorted = @($script:files | Sort-Object -Property `
-        @{ Expression = { $_.Bytes }; Descending = $true }, `
+        @{ Expression = { $_.Bytes }; Descending = $descending }, `
         @{ Expression = { $_.Path }; Descending = $false })
 
     $remaining = $script:totalBytes
@@ -372,7 +383,7 @@ function Tick-Deletion {
 # -------------------- GUI --------------------
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'Folder Size Trimmer'
-$form.ClientSize = New-Object System.Drawing.Size(960, 675)
+$form.ClientSize = New-Object System.Drawing.Size(960, 742)
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
 $form.MaximizeBox = $false
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
@@ -446,9 +457,22 @@ $btnAnalyze.Text = T 'analyze'
 $btnAnalyze.SetBounds(806, 177, 134, 36)
 $form.Controls.Add($btnAnalyze)
 
+$lblOrder = New-Object System.Windows.Forms.Label
+$lblOrder.Text = T 'orderLabel'
+$lblOrder.SetBounds(20, 232, 147, 22)
+$form.Controls.Add($lblOrder)
+
+$cmbOrder = New-Object System.Windows.Forms.ComboBox
+$cmbOrder.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+$cmbOrder.SetBounds(175, 227, 315, 28)
+[void]$cmbOrder.Items.Add((T 'orderLargest'))
+[void]$cmbOrder.Items.Add((T 'orderSmallest'))
+$cmbOrder.SelectedIndex = 0
+$form.Controls.Add($cmbOrder)
+
 $group = New-Object System.Windows.Forms.GroupBox
 $group.Text = T 'summaryGroup'
-$group.SetBounds(20, 227, 920, 94)
+$group.SetBounds(20, 270, 920, 94)
 $form.Controls.Add($group)
 
 $script:statCaptions = @{}
@@ -476,11 +500,11 @@ $lblFileCount = Add-Stat $group 'totalFilesLabel' 707 190
 $previewTitle = New-Object System.Windows.Forms.Label
 $previewTitle.Text = T 'previewTitle'
 $previewTitle.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
-$previewTitle.SetBounds(20, 336, 500, 24)
+$previewTitle.SetBounds(20, 381, 500, 24)
 $form.Controls.Add($previewTitle)
 
 $grid = New-Object System.Windows.Forms.DataGridView
-$grid.SetBounds(20, 365, 920, 220)
+$grid.SetBounds(20, 410, 920, 220)
 $grid.AllowUserToAddRows = $false
 $grid.AllowUserToDeleteRows = $false
 $grid.ReadOnly = $true
@@ -515,7 +539,7 @@ $grid.add_CellValueNeeded({
 })
 
 $progress = New-Object System.Windows.Forms.ProgressBar
-$progress.SetBounds(20, 602, 920, 13)
+$progress.SetBounds(20, 649, 920, 13)
 $progress.Minimum = 0
 $progress.Maximum = 100
 $form.Controls.Add($progress)
@@ -523,23 +547,40 @@ $form.Controls.Add($progress)
 $lblStatus = New-Object System.Windows.Forms.Label
 $lblStatus.Text = T 'ready'
 $lblStatus.AutoEllipsis = $true
-$lblStatus.SetBounds(20, 622, 916, 21)
+$lblStatus.SetBounds(20, 671, 916, 21)
 $form.Controls.Add($lblStatus)
 
 $btnDelete = New-Object System.Windows.Forms.Button
 $btnDelete.Text = T 'deleteButton'
-$btnDelete.SetBounds(642, 645, 151, 28)
+$btnDelete.SetBounds(642, 701, 151, 28)
 $btnDelete.Enabled = $false
 $form.Controls.Add($btnDelete)
 
 $btnCancel = New-Object System.Windows.Forms.Button
 $btnCancel.Text = T 'cancelButton'
-$btnCancel.SetBounds(803, 645, 137, 28)
+$btnCancel.SetBounds(803, 701, 137, 28)
 $btnCancel.Enabled = $false
 $form.Controls.Add($btnCancel)
 
 function Apply-Language {
     $subtitle.Text = T 'subtitle'
+    $lblOrder.Text = T 'orderLabel'
+    # Rebuild translated options without invalidating an approved preview.
+    $script:updatingOrderLabels = $true
+    try {
+        $cmbOrder.BeginUpdate()
+        try {
+            $index = $(if ($script:deleteOrder -eq 'smallest') { 1 } else { 0 })
+            $cmbOrder.Items.Clear()
+            [void]$cmbOrder.Items.Add((T 'orderLargest'))
+            [void]$cmbOrder.Items.Add((T 'orderSmallest'))
+            $cmbOrder.SelectedIndex = $index
+        } finally {
+            $cmbOrder.EndUpdate()
+        }
+    } finally {
+        $script:updatingOrderLabels = $false
+    }
     $lblLanguage.Text = T 'languageLabel'
     $btnAbout.Text = T 'aboutButton'
     $lblFolder.Text = T 'folderLabel'
@@ -551,7 +592,7 @@ function Apply-Language {
     foreach ($key in @('totalLabel','projectedLabel','affectedLabel','totalFilesLabel')) {
         $script:statCaptions[$key].Text = T $key
     }
-    $previewTitle.Text = T 'previewTitle'
+    $previewTitle.Text = $(if ($script:deleteOrder -eq 'smallest') { T 'previewTitleSmallest' } else { T 'previewTitle' })
     $grid.Columns[0].HeaderText = T 'colSize'
     $grid.Columns[1].HeaderText = T 'colFile'
     $grid.Columns[2].HeaderText = T 'colPath'
@@ -575,6 +616,16 @@ $cmbLanguage.add_SelectedIndexChanged({
     Apply-Language
 })
 Apply-Language
+
+$cmbOrder.add_SelectedIndexChanged({
+    if ($script:updatingOrderLabels -or $script:phase -ne 'idle') { return }
+    $newOrder = $(if ($cmbOrder.SelectedIndex -eq 1) { 'smallest' } else { 'largest' })
+    if ($newOrder -eq $script:deleteOrder) { return }
+    $script:deleteOrder = $newOrder
+    Clear-Preview
+    $previewTitle.Text = $(if ($newOrder -eq 'smallest') { T 'previewTitleSmallest' } else { T 'previewTitle' })
+    Set-Status 'orderChanged'
+})
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 15
@@ -619,6 +670,7 @@ $btnAnalyze.add_Click({
         $limit = Get-TargetBytes $txtLimit.Text
         $script:rootPath = $root
         $script:targetBytes = $limit
+        $script:planOrder = $script:deleteOrder
         $script:plan = @()
         $grid.RowCount = 0
         $script:cancelRequested = $false
@@ -629,11 +681,13 @@ $btnAnalyze.add_Click({
 })
 
 $btnDelete.add_Click({
-    if ($script:phase -ne 'idle' -or $script:plan.Count -eq 0) { return }
+    if ($script:phase -ne 'idle' -or $script:plan.Count -eq 0 -or
+        $script:planOrder -ne $script:deleteOrder) { return }
     $toRemove = $script:totalBytes - $script:remainingBytes
     $confirmText = [string]::Format((T 'confirmBody'),
         $script:rootPath, $script:plan.Count,
-        (Format-GB $toRemove), (Format-GB $script:remainingBytes))
+        (Format-GB $toRemove), (Format-GB $script:remainingBytes),
+        (Get-OrderName $script:planOrder))
     $answer = [System.Windows.Forms.MessageBox]::Show(
         $confirmText, (T 'confirmTitle'),
         [System.Windows.Forms.MessageBoxButtons]::YesNo,
@@ -648,9 +702,10 @@ $btnDelete.add_Click({
     $script:deleteError = ''
     $script:remainingBytes = $script:totalBytes
     $script:logLines = New-Object 'System.Collections.Generic.List[string]'
-    $script:logLines.Add("Folder Size Trimmer 0.2 | $(Get-Date -Format s)")
+    $script:logLines.Add("Folder Size Trimmer 0.3 | $(Get-Date -Format s)")
     $script:logLines.Add([string]::Format((T 'logFolder'), $script:rootPath))
     $script:logLines.Add([string]::Format((T 'logTargetBytes'), $script:targetBytes))
+    $script:logLines.Add([string]::Format((T 'logOrder'), (Get-OrderName $script:planOrder)))
     $script:logLines.Add((@((T 'logDateTime'), (T 'logBytes'), (T 'logFilePath'))) -join [char]9)
     $script:phase = 'delete'
     $progress.Style = [System.Windows.Forms.ProgressBarStyle]::Blocks
