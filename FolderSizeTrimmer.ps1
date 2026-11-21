@@ -1,4 +1,4 @@
-﻿# Folder Size Trimmer 0.3
+﻿# Folder Size Trimmer 0.4
 # Windows PowerShell 5.1 / Windows Forms
 # Coded by NetDaemon
 # Scans a directory recursively, previews files largest-first and, on explicit
@@ -18,6 +18,11 @@ $script:totalBytes = [decimal]0
 $script:remainingBytes = [decimal]0
 $script:files = New-Object 'System.Collections.Generic.List[object]'
 $script:plan = @()
+# In-memory protection is scoped to the last analyzed folder, never persisted.
+$script:protectedPaths = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+$script:protectionRoot = ''
+$script:planAchievable = $false
 $script:deleteOrder = 'largest'
 $script:planOrder = ''
 $script:updatingOrderLabels = $false
@@ -86,6 +91,7 @@ function Show-Error([string]$message) {
 function Clear-Preview {
     $script:plan = @()
     $script:planOrder = ''
+    $script:planAchievable = $false
     $script:analysisComplete = $false
     $script:lastResult = $null
     $grid.RowCount = 0
@@ -95,6 +101,8 @@ function Clear-Preview {
     $lblFileCount.Text = '-'
     Set-Status 'ready'
     $btnDelete.Enabled = $false
+    $btnProtect.Enabled = $false
+    $btnManage.Enabled = $false
 }
 
 function Update-Controls {
@@ -104,7 +112,11 @@ function Update-Controls {
     $btnBrowse.Enabled = $idle
     $btnAnalyze.Enabled = $idle
     $cmbOrder.Enabled = $idle
-    $btnDelete.Enabled = $idle -and ($script:plan.Count -gt 0) -and ($script:planOrder -eq $script:deleteOrder)
+    $btnProtect.Enabled = $idle -and $script:analysisComplete -and ($script:plan.Count -gt 0)
+    $btnManage.Enabled = $idle -and $script:analysisComplete -and ($script:protectedPaths.Count -gt 0)
+    $btnManage.Text = [string]::Format((T 'manageProtection'), $script:protectedPaths.Count)
+    $btnDelete.Enabled = $idle -and $script:planAchievable -and
+        ($script:plan.Count -gt 0) -and ($script:planOrder -eq $script:deleteOrder)
     $btnCancel.Enabled = ($script:phase -eq 'scan' -or $script:phase -eq 'delete')
 }
 
@@ -188,8 +200,9 @@ function Start-Enumeration([string]$mode) {
     $timer.Start()
 }
 
-function Complete-Analysis {
-    # Sort files in the approved direction; the path is a deterministic tie-breaker.
+function Rebuild-Plan {
+    # Reuse scanned file metadata; protecting/unprotecting does not rescan or delete.
+    # Protected files still count toward total size, but never enter the delete plan.
     $descending = ($script:planOrder -eq 'largest')
     $sorted = @($script:files | Sort-Object -Property `
         @{ Expression = { $_.Bytes }; Descending = $descending }, `
@@ -199,11 +212,13 @@ function Complete-Analysis {
     $preview = New-Object 'System.Collections.Generic.List[object]'
     foreach ($file in $sorted) {
         if ($remaining -lt $script:targetBytes) { break }
+        if ($script:protectedPaths.Contains([string]$file.Path)) { continue }
         $preview.Add($file)
         $remaining -= [decimal]$file.Bytes
     }
 
     $script:plan = @($preview.ToArray())
+    $script:planAchievable = ($remaining -lt $script:targetBytes)
     $script:remainingBytes = $remaining
     $script:analysisComplete = $true
     $script:lastResult = $null
@@ -213,12 +228,25 @@ function Complete-Analysis {
     $lblCount.Text = [string]$script:plan.Count
     $lblFileCount.Text = [string]$script:scanCount
 
-    Finish-Work
-    if ($script:plan.Count -eq 0) {
+    Update-Controls
+    if (-not $script:planAchievable) {
+        Set-Status 'protectionImpossible' @(
+            $script:protectedPaths.Count,
+            (Format-GB $remaining),
+            (Format-GB $script:targetBytes)
+        )
+    } elseif ($script:plan.Count -eq 0) {
         Set-Status 'alreadyUnder' @($script:ignoredLinks)
     } else {
-        Set-Status 'previewReady' @($script:plan.Count, $script:ignoredLinks)
+        Set-Status 'previewReady' @(
+            $script:plan.Count, $script:ignoredLinks, $script:protectedPaths.Count
+        )
     }
+}
+
+function Complete-Analysis {
+    Rebuild-Plan
+    Finish-Work
 }
 
 function Complete-Verification {
@@ -363,6 +391,9 @@ function Tick-Deletion {
     # One deletion per timer tick allows Cancel between files.
     $file = $script:plan[$script:deleteIndex]
     try {
+        if ($script:protectedPaths.Contains([string]$file.Path)) {
+            throw ([string]::Format((T 'protectedDeleteError'), $file.Path))
+        }
         Assert-UnchangedFile $file
         Remove-Item -LiteralPath $file.Path -Force -ErrorAction Stop
         $script:remainingBytes -= [decimal]$file.Bytes
@@ -500,8 +531,20 @@ $lblFileCount = Add-Stat $group 'totalFilesLabel' 707 190
 $previewTitle = New-Object System.Windows.Forms.Label
 $previewTitle.Text = T 'previewTitle'
 $previewTitle.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
-$previewTitle.SetBounds(20, 381, 500, 24)
+$previewTitle.SetBounds(20, 381, 460, 24)
 $form.Controls.Add($previewTitle)
+
+$btnProtect = New-Object System.Windows.Forms.Button
+$btnProtect.Text = T 'protectSelected'
+$btnProtect.SetBounds(508, 376, 171, 31)
+$btnProtect.Enabled = $false
+$form.Controls.Add($btnProtect)
+
+$btnManage = New-Object System.Windows.Forms.Button
+$btnManage.Text = [string]::Format((T 'manageProtection'), 0)
+$btnManage.SetBounds(690, 376, 250, 31)
+$btnManage.Enabled = $false
+$form.Controls.Add($btnManage)
 
 $grid = New-Object System.Windows.Forms.DataGridView
 $grid.SetBounds(20, 410, 920, 220)
@@ -593,6 +636,8 @@ function Apply-Language {
         $script:statCaptions[$key].Text = T $key
     }
     $previewTitle.Text = $(if ($script:deleteOrder -eq 'smallest') { T 'previewTitleSmallest' } else { T 'previewTitle' })
+    $btnProtect.Text = T 'protectSelected'
+    $btnManage.Text = [string]::Format((T 'manageProtection'), $script:protectedPaths.Count)
     $grid.Columns[0].HeaderText = T 'colSize'
     $grid.Columns[1].HeaderText = T 'colFile'
     $grid.Columns[2].HeaderText = T 'colPath'
@@ -668,6 +713,11 @@ $btnAnalyze.add_Click({
     try {
         $root = Get-SafeRoot $txtFolder.Text
         $limit = Get-TargetBytes $txtLimit.Text
+        if (-not $root.Equals($script:protectionRoot,
+                [System.StringComparison]::OrdinalIgnoreCase)) {
+            $script:protectedPaths.Clear()
+            $script:protectionRoot = $root
+        }
         $script:rootPath = $root
         $script:targetBytes = $limit
         $script:planOrder = $script:deleteOrder
@@ -680,8 +730,84 @@ $btnAnalyze.add_Click({
     }
 })
 
+function Show-ProtectionManager {
+    # Only the protected paths are listed; the main grid remains the deletion preview.
+    $dialog = New-Object System.Windows.Forms.Form
+    $dialog.Text = T 'protectionTitle'
+    $dialog.ClientSize = New-Object System.Drawing.Size(810, 475)
+    $dialog.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+    $dialog.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterParent
+    $dialog.MaximizeBox = $false
+    $dialog.MinimizeBox = $false
+    $dialog.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+
+    $description = New-Object System.Windows.Forms.Label
+    $description.Text = T 'protectionDescription'
+    $description.SetBounds(16, 16, 778, 52)
+    $dialog.Controls.Add($description)
+
+    $paths = New-Object System.Windows.Forms.ListBox
+    $paths.HorizontalScrollbar = $true
+    $paths.SetBounds(16, 73, 778, 336)
+    foreach ($path in @($script:protectedPaths | Sort-Object)) {
+        [void]$paths.Items.Add([string]$path)
+    }
+    $dialog.Controls.Add($paths)
+
+    $remove = New-Object System.Windows.Forms.Button
+    $remove.Text = T 'unprotectSelected'
+    $remove.SetBounds(504, 425, 150, 31)
+    $dialog.Controls.Add($remove)
+
+    $close = New-Object System.Windows.Forms.Button
+    $close.Text = T 'protectionClose'
+    $close.SetBounds(669, 425, 125, 31)
+    $dialog.Controls.Add($close)
+
+    # Event callbacks use script-scoped references because ShowDialog is modal.
+    $script:protectionDialogList = $paths
+    $script:protectionDialogForm = $dialog
+    $script:protectionChanged = $false
+    $remove.add_Click({
+        $index = $script:protectionDialogList.SelectedIndex
+        if ($index -lt 0) { return }
+        $path = [string]$script:protectionDialogList.Items[$index]
+        if ($script:protectedPaths.Remove($path)) {
+            $script:protectionChanged = $true
+            $script:protectionDialogList.Items.RemoveAt($index)
+        }
+    })
+    $close.add_Click({ $script:protectionDialogForm.Close() })
+
+    try {
+        [void]$dialog.ShowDialog($form)
+    } finally {
+        $changed = $script:protectionChanged
+        $script:protectionDialogList = $null
+        $script:protectionDialogForm = $null
+        $dialog.Dispose()
+    }
+    if ($changed) { Rebuild-Plan }
+}
+
+$btnProtect.add_Click({
+    if ($script:phase -ne 'idle' -or -not $script:analysisComplete -or
+        $grid.SelectedRows.Count -eq 0) { return }
+    $index = $grid.SelectedRows[0].Index
+    if ($index -lt 0 -or $index -ge $script:plan.Count) { return }
+    $path = [string]$script:plan[$index].Path
+    if ($script:protectedPaths.Add($path)) { Rebuild-Plan }
+})
+
+$btnManage.add_Click({
+    if ($script:phase -ne 'idle' -or -not $script:analysisComplete -or
+        $script:protectedPaths.Count -eq 0) { return }
+    Show-ProtectionManager
+})
+
 $btnDelete.add_Click({
-    if ($script:phase -ne 'idle' -or $script:plan.Count -eq 0 -or
+    if ($script:phase -ne 'idle' -or -not $script:planAchievable -or
+        $script:plan.Count -eq 0 -or
         $script:planOrder -ne $script:deleteOrder) { return }
     $toRemove = $script:totalBytes - $script:remainingBytes
     $confirmText = [string]::Format((T 'confirmBody'),
@@ -702,7 +828,7 @@ $btnDelete.add_Click({
     $script:deleteError = ''
     $script:remainingBytes = $script:totalBytes
     $script:logLines = New-Object 'System.Collections.Generic.List[string]'
-    $script:logLines.Add("Folder Size Trimmer 0.3 | $(Get-Date -Format s)")
+    $script:logLines.Add("Folder Size Trimmer 0.4 | $(Get-Date -Format s)")
     $script:logLines.Add([string]::Format((T 'logFolder'), $script:rootPath))
     $script:logLines.Add([string]::Format((T 'logTargetBytes'), $script:targetBytes))
     $script:logLines.Add([string]::Format((T 'logOrder'), (Get-OrderName $script:planOrder)))
