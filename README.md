@@ -85,7 +85,6 @@ FolderSizeTrimmer/
 
 **Coded by NetDaemon**
 
-- Website: [ntdmn.xyz](https://ntdmn.xyz/)
 - GitHub: [@netdaemon91](https://github.com/netdaemon91)
 
 **Version:** 0.1
