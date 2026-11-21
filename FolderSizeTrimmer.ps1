@@ -649,9 +649,9 @@ $btnDelete.add_Click({
     $script:remainingBytes = $script:totalBytes
     $script:logLines = New-Object 'System.Collections.Generic.List[string]'
     $script:logLines.Add("Folder Size Trimmer 0.2 | $(Get-Date -Format s)")
-    $script:logLines.Add("Ordner: $($script:rootPath)")
-    $script:logLines.Add("Ziel (Bytes): $($script:targetBytes)")
-    $script:logLines.Add('Datum / Uhrzeit`tBytes`tDateipfad')
+    $script:logLines.Add([string]::Format((T 'logFolder'), $script:rootPath))
+    $script:logLines.Add([string]::Format((T 'logTargetBytes'), $script:targetBytes))
+    $script:logLines.Add((@((T 'logDateTime'), (T 'logBytes'), (T 'logFilePath'))) -join [char]9)
     $script:phase = 'delete'
     $progress.Style = [System.Windows.Forms.ProgressBarStyle]::Blocks
     $progress.Value = 0
